@@ -18,6 +18,7 @@
             FieldInfo
             MethodInfo
             PropertyInfo]
+           Magic.Constants
            System.AppDomain))
 
 (defmacro throw! [& e]
