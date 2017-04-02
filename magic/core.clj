@@ -161,6 +161,8 @@
     
     (= to Boolean)
     [(il/ldnull)
+     (il/ceq)
+     (il/ldc-i4-0)
      (il/ceq)]
     
     (and (= from Boolean)
@@ -200,13 +202,21 @@
     
     ;; RT casts
     (and (= from Object) (= to Single))
-    (il/call (interop/method RT "floatCast" from))
+    (il/call (if *unchecked-math*
+               (interop/method RT "uncheckedFloatCast" from)
+               (interop/method RT "floatCast" from)))
     (and (= from Object) (= to Double))
-    (il/call (interop/method RT "doubleCast" from))
+    (il/call (if *unchecked-math*
+               (interop/method RT "uncheckedDoubleCast" from)
+               (interop/method RT "doubleCast" from)))
     (and (= from Object) (= to Int32))
-    (il/call (interop/method RT "intCast" from))
+    (il/call (if *unchecked-math*
+               (interop/method RT "uncheckedIntCast" from)
+               (interop/method RT "intCast" from)))
     (and (= from Object) (= to Int64))
-    (il/call (interop/method RT "longCast" from))
+    (il/call (if *unchecked-math*
+               (interop/method RT "uncheckedLongCast" from)
+               (interop/method RT "longCast" from)))
     
     ;; unbox objects to valuetypes
     (and (= from Object) (.IsValueType to))
@@ -246,7 +256,8 @@
   "il/pop if in a non-void statement context.
   Required to keep the stack balanced."
   [{:keys [op] :as ast}]
-  (if (and (not= :if op) ;; if cleans up its own stack
+  (if (and (not= :if op)    ;; if cleans up its own stack
+           (not= :set! op)  ;; set! cleans up its own stack
            (statement? ast)
            (not= System.Void (clr-type ast)))
     (il/pop)))
@@ -494,7 +505,8 @@
         binding-map (reduce (fn [m binding]
                               (assoc m
                                 (-> binding :name)
-                                (il/local (clr-type binding))))
+                                (il/local (clr-type binding)
+                                          (str (-> binding :name)))))
                             (sorted-map) 
                             bindings)
         binding-vector (mapv #(binding-map (-> % :name)) bindings)
@@ -555,7 +567,7 @@
                   (cond
                     (statement? ast) 
                     (cleanup-stack else)
-                    (not= :recur (:op else))
+                    (not= System.Void (clr-type else))
                     (convert (clr-type else) if-expr-type))]
                  (il/br end-label)
                  then-label
@@ -563,7 +575,7 @@
                   (cond
                     (statement? ast) 
                     (cleanup-stack then)
-                    (not= :recur (:op then))
+                    (not= System.Void (clr-type then))
                     (convert (clr-type then) if-expr-type))]
                  end-label])))
 
@@ -610,37 +622,59 @@
   [(load-var var)
    (get-var var)])
 
+
 (defn set!-symbolizer
-  [{:keys [target val] {:keys [context]} :env :as ast} symbolizers]
+  [{:keys [target val] :as ast} symbolizers]
   (let [target-op (:op target)
         target' (-> target :target)
         field (-> target :field)
-        property (-> target :property)]
+        property (-> target :property)
+        value-used? (not (statement? ast))]
     (cond
       (= target-op :instance-field)
       (let [v (il/local (clr-type val))]
         [(symbolize target' symbolizers)
          (reference-to target')
          (symbolize val symbolizers)
-         (il/stloc v)
-         (il/ldloc v)
+         (if value-used?
+           [(il/stloc v)
+            (il/ldloc v)])
          (convert (clr-type val) (.FieldType field))
          (il/stfld field)
-         (il/ldloc v)])
+         (if value-used?
+           (il/ldloc v))])
       (= target-op :instance-property)
       (let [v (il/local (clr-type val))]
         [(symbolize target' symbolizers)
          (reference-to target')
          (symbolize val symbolizers)
-         (il/stloc v)
-         (il/ldloc v)
+         (if value-used?
+           [(il/stloc v)
+            (il/ldloc v)])
          (convert (clr-type val) (.PropertyType property))
          (il/callvirt (.GetSetMethod property))
-         (il/ldloc v)])
+         (if value-used?
+           (il/ldloc v))])
       (= target-op :static-field)
-      (throw! "set! static-field not finished")
+      (let [v (il/local (clr-type val))]
+        [(symbolize val symbolizers)
+         (if value-used?
+           [(il/stloc v)
+            (il/ldloc v)])
+         (convert (clr-type val) (.FieldType field))
+         (il/stsfld field)
+         (if value-used?
+           (il/ldloc v))])
       (= target-op :static-property)
-      (throw! "set! static-property not finished"))))
+      (let [v (il/local (clr-type val))]
+        [(symbolize val symbolizers)
+         (if value-used?
+           [(il/stloc v)
+            (il/ldloc v)])
+         (convert (clr-type val) (.PropertyType property))
+         (il/call (.GetSetMethod property))
+         (if value-used?
+           (il/ldloc v))]))))
 
 (defn has-arity-method
   "Symbolic bytecode for the IFnArity.HasArity method"
@@ -649,7 +683,7 @@
     "HasArity"
     (enum-or MethodAttributes/Public
              MethodAttributes/Virtual)
-    Boolean [Int32]
+    Boolean [(il/parameter Int32)]
     (let [ret-true (il/label)]
       [(map (fn [arity]
               [(il/ldarg-1)
@@ -713,6 +747,8 @@
   (let [param-hint (-> form first tag)
         param-types (mapv clr-type params)
         obj-params (mapv (constantly Object) params)
+        param-il (map #(il/parameter (clr-type %) (-> % :form str)) params)
+        param-il-unhinted (map #(il/parameter Object (-> % :form str)) params)
         return-type (or param-hint
                         (non-void-clr-type ret))
         public-virtual (enum-or MethodAttributes/Public MethodAttributes/Virtual)
@@ -720,7 +756,7 @@
         (il/method
           "invoke"
           public-virtual
-          Object obj-params
+          Object param-il-unhinted
           [(symbolize body symbolizers)
            (convert return-type Object)
            (il/ret)])
@@ -728,7 +764,7 @@
         (il/method
           "invoke"
           public-virtual
-          return-type param-types
+          return-type param-il
           [(symbolize body symbolizers)
            (convert (clr-type ret) return-type)
            (il/ret)])
@@ -736,7 +772,7 @@
         (il/method
           "invoke"
           public-virtual
-          Object obj-params
+          Object param-il-unhinted
           [(il/ldarg-0)
            (interleave
              (map (comp load-argument-standard inc) (range))

@@ -2,8 +2,7 @@
   (:require [magic.core :as magic]
             [magic.interop :as interop]
             [mage.core :as il])
-  (:import [System.Reflection FieldAttributes BindingFlags
-            MethodAttributes CallingConventions]))
+  (:import [System.Reflection CallingConventions FieldAttributes BindingFlags MethodAttributes]))
 
 (defn var-name [v]
   (.Replace
