@@ -154,19 +154,19 @@ The goal of MAGIC is to compile all of Clojure into MSIL bytecode. To do this, i
 <tr>
   <td><code>:try</code></td>
   <td><code>(try (foo) (catch System.Exception e e))</code></td>
-  <td>   </td>
+  <td> ✔ </td>
   <td>   </td>
 </tr>
 <tr>
   <td><code>:catch</code></td>
   <td><code>(try (foo) <strong>(catch System.Exception e e)</strong>)</code></td>
-  <td>   </td>
+  <td> ✔ </td>
   <td>   </td>
 </tr>
 <tr>
   <td><code>:throw</code></td>
   <td><code>(throw (System.Exception. "foo"))</code></td>
-  <td>   </td>
+  <td> ✔ </td>
   <td>   </td>
 </tr>
 <tr>
@@ -262,13 +262,13 @@ The goal of MAGIC is to compile all of Clojure into MSIL bytecode. To do this, i
 <tr>
   <td><code>:monitor-enter</code></td>
   <td><code>(monitor-enter lock)</code></td>
-  <td>   </td>
+  <td> ✔ </td>
   <td>   </td>
 </tr>
 <tr>
   <td><code>:monitor-exit</code></td>
   <td><code>(monitor-exit lock)</code></td>
-  <td>   </td>
+  <td> ✔ </td>
   <td>   </td>
 </tr>
 </table>
