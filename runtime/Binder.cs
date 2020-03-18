@@ -16,7 +16,7 @@ namespace Magic
             return _binder.BindToField(bindingAttr, match, value, culture);
         }
 
-        public override MethodBase? BindToMethod(BindingFlags bindingAttr, MethodBase[] match, ref object[] args, ParameterModifier[]? modifiers, CultureInfo? culture, string[]? names, out object state)
+        public override MethodBase BindToMethod(BindingFlags bindingAttr, MethodBase[] match, ref object[] args, ParameterModifier[] modifiers, CultureInfo culture, string[] names, out object state)
         {
             try {
                 var nativeResult = _binder.BindToMethod(bindingAttr, match, ref args, modifiers, culture, names, out state);
@@ -53,7 +53,7 @@ namespace Magic
             _binder.ReorderArgumentArray(ref args, state);
         }
         
-        public override MethodBase? SelectMethod(BindingFlags bindingAttr, MethodBase[] match, Type[] argumentTypes, ParameterModifier[]? modifiers)
+        public override MethodBase SelectMethod(BindingFlags bindingAttr, MethodBase[] match, Type[] argumentTypes, ParameterModifier[] modifiers)
         {
             if(match.Length == 0)
                 return null;
@@ -88,7 +88,7 @@ namespace Magic
             return result;
         }
 
-        static bool MatchByObjectConversion(BindingFlags bindingAttr, MethodBase candidate, Type[] argumentTypes, ParameterModifier[]? modifiers)
+        static bool MatchByObjectConversion(BindingFlags bindingAttr, MethodBase candidate, Type[] argumentTypes, ParameterModifier[] modifiers)
         {
             var parameters = candidate.GetParameters();
             if (parameters.Length != argumentTypes.Length) return false;
@@ -102,7 +102,7 @@ namespace Magic
             return true;
         }
 
-        static bool MatchByNarrowingConversion(BindingFlags bindingAttr, MethodBase candidate, Type[] argumentTypes, ParameterModifier[]? modifiers)
+        static bool MatchByNarrowingConversion(BindingFlags bindingAttr, MethodBase candidate, Type[] argumentTypes, ParameterModifier[] modifiers)
         {
             var parameters = candidate.GetParameters();
             if (parameters.Length != argumentTypes.Length) return false;
