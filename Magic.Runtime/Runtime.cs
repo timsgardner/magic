@@ -92,7 +92,7 @@ namespace Magic
 #if CSHARP8
         static object InvokeUnwrappingExceptions(MethodBase method, object? target, object[]? args)
 #else
-        static object InvokeUnwrappingExceptions(MethodBase method, object target, object[]? args)
+        static object InvokeUnwrappingExceptions(MethodBase method, object target, object[] args)
 #endif
         {
             try {
@@ -142,7 +142,7 @@ namespace Magic
             throw new Exception($"Could not invoke zero arity member `{name}` on target {(o == null ? "null" : o.ToString())}.");
         }
 
-        static MethodBase? BindToMethod(BindingFlags bindingFlags, Type t, string name, object[] args)
+        static MethodBase BindToMethod(BindingFlags bindingFlags, Type t, string name, object[] args)
         {
             var methods = t.GetMethods().Where(m => m.Name == name).ToArray();
             Object state;
