@@ -215,9 +215,11 @@
                (throw (Exception. (str "Could not find " path ", roots " roots)))))
            (il/emit! ctx (il/ret))
            (.CreateType ns-type))
-         (when *write-files*
-           (.. magic.emission/*module* Assembly (Save (.Name magic.emission/*module*))))
-         (println "[compile-file] end" path "->" (.Name magic.emission/*module*)))))))
+         (let [dll-name (.Name magic.emission/*module*)]
+           (when *write-files*
+             (.. magic.emission/*module* Assembly (Save dll-name)))
+           (println "[compile-file] end" path "->" dll-name)
+           {:dll-name dll-name}))))))
 
 ;; *loaded-libs* is supposed to be private, so we're putting this indirection
 ;; here for when we get var dereferencing to respect privacy
