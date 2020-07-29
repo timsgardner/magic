@@ -155,7 +155,10 @@
                                                 (if-let [path' (find-file roots path)]
                                                   (compile-file roots path' path opts)
                                                   (throw (Exception. (str "Could not find " path ", roots " roots))))))))))]
-                   (.Invoke (.GetMethod expr-type "eval") nil empty-args))
+                   ;; (.Invoke (.GetMethod expr-type "eval") nil empty-args)
+                   ;; (.InvokeMember expr-type "eval" (enum-or System.Reflection.BindingFlags/Public System.Reflection.BindingFlags/Static) nil nil empty-args)
+                   )
+                 (.InvokeMember expr-type "eval" (enum-or System.Reflection.BindingFlags/InvokeMethod System.Reflection.BindingFlags/Public System.Reflection.BindingFlags/Static) nil nil empty-args)
                  (recur (read-1) (inc i))))
              (.Close rdr))))
        (finally
