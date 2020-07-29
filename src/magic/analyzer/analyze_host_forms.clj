@@ -106,7 +106,7 @@
       (merge (dissoc ast :class)
              {:type target-type
               :children (vec (remove #(= % :class) children))}
-             (cond (and (.IsValueType target-type)
+             (cond (and (types/is-value-type? target-type)
                         (empty? args))
                    {:op :initobj}
                    ;; due to an annoying limitation of SRE we cannot look up 
@@ -144,7 +144,7 @@
                           System.Type
                           (and (= :const (:op target))
                                (= :class (:type target)))
-                          (:val target)
+                          (types/resolve (:val target))
                           :else
                           (ast-type target))
             m-or-f (str m-or-f)
@@ -206,23 +206,24 @@
                           (:val target)
                           (ast-type target))]
         (if target-type
-          (merge ast
-                 {:op (if static?
-                        :static-method
-                        :instance-method)}
-                 (if-let [meth (select-method
-                                (filter #(= (.Name %) (str method))
-                                        (.GetMethods target-type))
-                                (map ast-type args))]
-                   {:method meth}
-                   (if-let [best-method (select-method
-                                         (filter #(= (.Name %) (str method))
-                                                 (get-all-methods target-type))
-                                         (map ast-type args))]
-                     {:method best-method}
-                     {:op (if static? 
-                            :dynamic-static-method
-                            :dynamic-instance-method)})))
+          (let [method (munge method)
+                candidates (filter #(= (.Name %) (str method))
+                                   (.GetMethods target-type))
+                candidates' (filter #(= (.Name %) (str method))
+                                    (get-all-methods target-type))]
+            (merge ast
+                   {:op (if static?
+                          :static-method
+                          :instance-method)}
+                   (if-let [meth (if (and (= 1 (count candidates)) static?)
+                                   (first candidates)
+                                   (select-method candidates (map ast-type args)))]
+                     {:method meth}
+                     (if-let [best-method (select-method candidates' (map ast-type args))]
+                       {:method best-method}
+                       {:op (if static? 
+                              :dynamic-static-method
+                              :dynamic-instance-method)}))))
           (merge ast
                  {:op (if static?
                         :dynamic-static-method

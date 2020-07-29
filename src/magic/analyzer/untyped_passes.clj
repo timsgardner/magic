@@ -98,17 +98,23 @@
     (assoc ast :constant? (every? :constant? items))
     #_else ast))
 
+(defn update-context [ast ctx]
+  (assoc-in
+   (update-children ast #(update-context % ctx))
+   [:env :context]
+   ctx))
+
 (defn throwing-do [exprs]
   (let [[exprs* throwing-exprs] (split-with (comp not :throws?) exprs)]
     (when-let [ret* (first throwing-exprs)]
       {:op :do
-       :statements (vec exprs*)
-       :ret ret*
+       :statements (mapv #(update-context % :ctx/statement) exprs*)
+       :ret (update-context ret* :ctx/return)
        :throws? true
        :children [:statements :ret]})))
 
 (defn treat-throw-as-return
-  {:pass-info {:walk :post :before #{#'compute-empty-stack-context #'uniquify-locals}}}
+  {:pass-info {:walk :post :before #{#'compute-empty-stack-context #'uniquify-locals #'compute-outside-type}}}
   [{:keys [op] :as ast}]
   (case op
     :throw
@@ -152,6 +158,9 @@
                     (or throws? (:throws? finally-expr))
                     throws?)]
       (assoc ast :throws? throws?))
+    :invoke
+    (merge ast 
+           (throwing-do (:args ast)))
     (:def
      :fn :fn-method
      :proxy :proxy-method
@@ -159,8 +168,9 @@
      :deftype :deftype-method)
     ast
     #_else
-    (merge ast
-           (throwing-do (children ast)))))
+    (if-let [ast* (throwing-do (children ast))]
+      (merge ast ast*)
+      ast)))
 
 (defn wrap-tagged-expressions 
   {:pass-info {:walk :any :after #{#'uniquify-locals}}}
@@ -202,6 +212,20 @@
     (assoc ast :const-type (type val))
     ast))
 
+(def ^:dynamic *fn-name* nil)
+
+(defn propagate-fn-name
+  {:pass-info {:walk :none}}
+  [{:keys [op name local] :as ast}]
+  (case op
+    :fn
+    (binding [*fn-name* (or name (:form local))]
+      (update-children ast propagate-fn-name))
+    #_else
+    (-> ast
+        (assoc :containing-fn-name *fn-name*)
+        (update-children propagate-fn-name))))
+
 (def untyped-pass-set
   #{#'collect-vars
     #'collect-keywords
@@ -218,6 +242,7 @@
     #'remove-empty-throw-children
     #'treat-throw-as-return
     #'prevent-recur-out-of-try
+    #'propagate-fn-name
     #'explicit-const-type})
 
 (def scheduled-passes

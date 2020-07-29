@@ -78,14 +78,16 @@
      (nil? t)
      nil
      (instance? Type t)
-     t
+     (recur (.FullName t) ns)
      (symbol? t)
      (recur (str t) ns)
      (string? t)
      (or (shorthand t)
          (and *module*
               (try 
-                (.GetType *module* t)
+                (let [name t
+                      qualified-name (str (namespace-munge ns) "." name)]
+                  (or (.GetType *module* qualified-name) (.GetType *module* name)))
                 (catch ArgumentException e
                   nil)))
          (Runtime/FindType t)
@@ -94,8 +96,20 @@
      :else
      nil)))
 
+(defn is-array? [t]
+  (and (instance? Type t) (.IsArray t) (= 1 (.GetArrayRank t))))
+
+(defn is-value-type? [t]
+  (and (instance? Type t) (.IsValueType t)))
+
+(defn is-enum? [t]
+  (and (instance? Type t) (.IsEnum t)))
+
+(defn is-primitive? [t]
+  (and (instance? Type t) (.IsPrimitive t)))
+
 (defn tag [x]
-  (if-let [t (-> x meta :tag)]
+  (when-let [t (-> x meta :tag)]
     (resolve t)))
 
 (defmulti ast-type-impl
@@ -142,8 +156,36 @@
 
 ;;;;; ast types
 
-(def ast-type-impl*
- (memoize (fn ast-type-impl* [ast] (ast-type-impl ast))) )
+;; :forward ast -> type
+;; :reverse type name -> ast
+(def type-lookup-cache (atom {:forward {} :reverse {}}))
+
+(defn type-lookup-cache-store [cache ast type]
+  (cond
+    (instance? Type type)
+    (-> cache
+        (update :forward assoc ast type)
+        (update :reverse assoc (.FullName type) ast))
+    :else
+    (-> cache
+        (update :forward assoc ast type))))
+
+(defn type-lookup-cache-evict [cache type-name]
+  (if-let [ast (get (:reverse cache) type-name)]
+    (-> cache
+        (update :forward dissoc ast)
+        (update :reverse dissoc type-name))
+    cache))
+
+(defn type-lookup-cache-evict! [type-name]
+  (swap! type-lookup-cache type-lookup-cache-evict type-name))
+
+(defn ast-type-impl* [ast]
+  (if-let [cached-type (get (:forward @type-lookup-cache) ast)]
+    cached-type
+    (let [type (ast-type-impl ast)]
+      (swap! type-lookup-cache type-lookup-cache-store ast type)
+      type)))
 
 (defn ast-type [ast]
   (if-let [tag (-> ast :form meta :tag)]
@@ -334,23 +376,19 @@
 ;; TODO -> form locals :form meta :tag ??
 (defmethod ast-type-impl :binding [ast]
   (or
-    (if-let [tag (-> ast :form meta :tag)]
-      (if (symbol? tag)
-        (resolve tag)
-        tag))
-    (if-let [init (:init ast)]
-      (ast-type-impl init))
-    Object))
+   (when-let [tag (-> ast :form meta :tag)]
+     (resolve tag))
+   (when-let [init (:init ast)]
+     (ast-type-impl init))
+   Object))
 
 (defmethod ast-type-impl :local
   [{:keys [name form local by-ref?] {:keys [locals]} :env :as ast}]
   (let [tag (-> form locals :form meta :tag)
         type (cond tag
-                   (if (symbol? tag)
-                     (if-let [t (resolve tag)]
-                       t
-                       (throw! "Could not resolve type hint " tag " while analyzing form " form))
-                     tag)
+                   (if-let [t (resolve tag)]
+                     t
+                     (throw! "Could not resolve type hint " tag " while analyzing form " form))
                    (= local :arg)
                    Object
                    (= local :proxy-this)
@@ -406,7 +444,7 @@
        (or (and (:literal? test)
                 (not= (:val test) false)
                 (not= (:val test) nil))
-           (and (.IsValueType (ast-type-impl test))
+           (and (is-value-type? (ast-type-impl test))
                 (not= Boolean (ast-type-impl test))))))
 
 (defn always-else?

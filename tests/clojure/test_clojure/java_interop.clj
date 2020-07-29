@@ -205,6 +205,7 @@
 ;;                      java.io.ByteArrayInputStream. java.io.ObjectInputStream.
 ;;                      .readObject)))))
 
+;; this is not a great test. the base classes will change in different versions of the .net framework -nasser
 (deftest test-bases
   (are [x y] (= (set x) (set y))                                ;;; added calls to set
       (bases  System.Math)                                      ;;; java.lang.Math)
@@ -216,14 +217,14 @@
       (bases System.IComparable)                                ;;; java.lang.Comparable)
         nil
       (bases System.Int32)                                      ;;; java.lang.Integer)
-        (list System.ValueType System.IComparable System.IFormattable System.IConvertible |System.IComparable`1[System.Int32]| |System.IEquatable`1[System.Int32]|) ))  ;;; (java.lang.Number java.lang.Comparable)
+        (list System.ValueType System.IComparable System.IFormattable System.ISpanFormattable System.IConvertible |System.IComparable`1[System.Int32]| |System.IEquatable`1[System.Int32]|) ))  ;;; (java.lang.Number java.lang.Comparable)
 
 (deftest test-supers
   (are [x y] (= x y)
       (supers System.Math)                                      ;;; java.lang.Math)
         #{System.Object}                                        ;;; java.lang.Object}
       (supers System.Int32)                                     ;;; java.lang.Integer)
-        #{System.IFormattable System.IConvertible System.IComparable |System.IEquatable`1[System.Int32]| |System.IComparable`1[System.Int32]|     ;;; java.lang.Number java.lang.Object
+        #{System.IFormattable System.ISpanFormattable System.IConvertible System.IComparable |System.IEquatable`1[System.Int32]| |System.IComparable`1[System.Int32]|     ;;; java.lang.Number java.lang.Object
 		System.Object System.ValueType}   ))                     ;;; java.lang.Comparable java.io.Serializable} ))
 
 (deftest test-proxy-super
@@ -303,7 +304,7 @@
 
 (deftest test-make-array
   ; negative size
-  (is (thrown? ArgumentOutOfRangeException (make-array Int32 -1)))   ;;; NegativeArraySizeException Integer
+  (is (thrown? OverflowException (make-array Int32 -1)))   ;;; NegativeArraySizeException Integer
 
   ; one-dimensional
   (are [x] (= (alength (make-array Int32 x)) x)      ;;; Integer

@@ -622,14 +622,16 @@
 
 (defn- emit-method-builder [on-interface method on-method arglists]
   (let [methodk (keyword method)
-        gthis (with-meta (gensym) {:tag 'clojure.lang.AFunction})
+        gthis (gensym)
+        gthis-tagged (with-meta gthis {:tag 'clojure.lang.AFunction})
         ginterf (gensym)]
     `(fn [cache#]
       (let [~ginterf
              (fn
                ~@(map 
                   (fn [args]
-                    (let [gargs (map #(gensym (str "gf__" % "__")) args)
+                    (let [gargs (-> (mapv #(gensym (str "gf__" % "__")) args)
+                                    (update 0 vary-meta assoc :tag on-interface))
                           target (first gargs)]
                       `([~@gargs]
                           (. ~(with-meta target {:tag on-interface})  (~(or on-method method) ~@(rest gargs))))))
@@ -641,7 +643,7 @@
                     (let [gargs (map #(gensym (str "gf__" % "__")) args)
                           target (first gargs)]
                       `([~@gargs]
-                          (let [cache# (.__methodImplCache ~gthis)
+                          (let [cache# (.__methodImplCache ~gthis-tagged)
                                 f# (.fnFor cache# (clojure.lang.Util/classOf ~target))]
                             (if f# 
                               (f# ~@gargs)
@@ -695,7 +697,7 @@
                         {} sigs))
         meths (mapcat (fn [sig]
                         (let [m (munge (:name sig))]
-                          (map #(vector m (vec (repeat (dec (count %))'Object)) 'Object) 
+                          (map #(vector m (vec (map (fn [param] (or (tag param) 'Object)) %)) (or (tag %) (tag m) 'Object)) 
                                (:arglists sig))))
                       (vals sigs))]
   `(do
@@ -827,7 +829,7 @@
 
 (defn- emit-impl [[p fs]]
   [p (zipmap (map #(-> % first keyword) fs)
-             (map #(cons `fn (drop 1 %)) fs))])
+             (map #(cons `fn (list* (gensym p) (drop 1 %))) fs))])
 
 (defn- emit-hinted-impl [c [p fs]]
   (let [hint (fn [specs]
@@ -839,7 +841,7 @@
                               body))
                       specs)))]
     [p (zipmap (map #(-> % first name keyword) fs)
-               (map #(cons `fn (hint (drop 1 %))) fs))]))
+               (map #(cons `fn (list* (gensym (str p "-" c)) (hint (drop 1 %)))) fs))]))
 
 (defn- emit-extend-type [c specs]
   (let [impls (parse-impls specs)]

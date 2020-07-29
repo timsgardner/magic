@@ -218,6 +218,31 @@
        (il/ldc-i4-0)
        end-label])))
 
+(defintrinsic clojure.core/>
+  #(when (numeric-args %) Boolean)
+  (fn intrinsic-lt-compiler
+    [{:keys [args] :as ast} type compilers]
+    (let [arg-pairs (partition 2 1 args)
+          less-label (il/label)
+          true-label (il/label)
+          end-label (il/label)
+          il-pairs
+          (map (fn [[a b]]
+                 (let [best-numeric-type
+                       (->> [a b] (map ast-type) types/best-numeric-promotion)]
+                   [(magic/compile a compilers)
+                    (magic/convert a best-numeric-type)
+                    (magic/compile b compilers)
+                    (magic/convert b best-numeric-type)]))
+               arg-pairs)]
+      [(->> (interleave il-pairs (repeat (il/blt less-label)))
+            drop-last)
+       (il/cgt)
+       (il/br end-label)
+       less-label
+       (il/ldc-i4-0)
+       end-label])))
+
 (defintrinsic clojure.core/=
   #(when (numeric-args %) Boolean)
   (fn intrinsic-eq-compiler
@@ -256,15 +281,15 @@
 
 (defn array-type [{:keys [args]}]
   (let [type (-> args first ast-type)]
-    (when (.IsArray type) type)))
+    (when (types/is-array? type) type)))
 
 (defn when-array-type [{:keys [args]} v]
   (let [type (-> args first ast-type)]
-    (when (.IsArray type) v)))
+    (when (types/is-array? type) v)))
 
 (defn array-element-type [{:keys [args]}]
   (let [type (-> args first ast-type)]
-    (when (.IsArray type)
+    (when (types/is-array? type)
       (.GetElementType type))))
 
 (defintrinsic clojure.core/aclone
@@ -320,6 +345,19 @@
        (when-not statement?
          (il/ldloc val-return))])))
 
+(defintrinsic clojure.core/nth
+  array-element-type
+  (fn intrinsic-nth-compiler
+    [{:keys [args] :as ast} type compilers]
+    (let [[array-arg index-arg] args
+          index-arg (reinterpret index-arg Int32)
+          value-type? (.IsValueType type)]
+      [(magic/compile array-arg compilers)
+       (magic/compile index-arg compilers)
+       (if value-type?
+         (il/ldelem type)
+         (il/ldelem-ref))])))
+
 (defintrinsic clojure.core/alength
   #(when-array-type % Int32)
   (fn intrinsic-alength-compiler
@@ -355,7 +393,7 @@
     [{[{:keys [val] :as type-arg} obj-arg] :args} type compilers]
     (let [obj-arg-type (ast-type obj-arg)]
       (if (and obj-arg-type
-               (.IsValueType obj-arg-type))
+               (types/is-value-type? obj-arg-type))
         (if (= obj-arg-type val)
           (il/ldc-i4-1)
           (il/ldc-i4-0))
@@ -370,7 +408,7 @@
     [{[first-arg] :args} type compilers]
     (let [arg-type (ast-type first-arg)]
       [(magic/compile first-arg compilers)
-       (if (.IsArray arg-type)
+       (if (types/is-array? arg-type)
          (il/ldlen)
          [(magic/convert first-arg Object)
           (il/call (interop/method RT "count" Object))]

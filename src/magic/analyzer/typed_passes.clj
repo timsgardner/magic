@@ -114,7 +114,8 @@
                :params hinted-params
                :source-method best-method
                type-key this-type))
-      (throw (ex-info "no match" {:name name :params (map ast-type params)})))))
+      (throw (ex-info "No match binding method" {:name name :params (map ast-type params) :candidates (vec candidate-methods)
+                                                 :type-key type-key :this-type this-type :explicit-this? explicit-this?})))))
 
 (defn analyze-deftype
   [{:keys [op classname fields implements methods] :as ast}]
@@ -153,11 +154,22 @@
              :implements interfaces))
     ast))
 
-(defn gen-fn-name [n]
-  (string/replace
-   (str "<magic>" (u/gensym (str *ns* "$" (or n "<fn>") "_")))
-   "."
-   "_"))
+(defn gen-il-name
+  ([n] (gen-il-name n "<generated-type>"))
+  ([n default]
+   (string/replace
+    (str "<magic>" (u/gensym (str *ns* "$" (or n default) "_")))
+    "."
+    "_")))
+
+(def make-fn-type-cctor
+ (memoize 
+  (fn [fn-type]
+    (.DefineConstructor
+     fn-type
+     (enum-or MethodAttributes/Public MethodAttributes/Static)
+     CallingConventions/Standard
+     Type/EmptyTypes))))
 
 (defn analyze-fn
   [{:keys [op name local vars keywords variadic?] :as ast}]
@@ -165,7 +177,7 @@
     :fn
     (let [name (or name (:form local))
           interfaces []
-          fn-name (gen-fn-name name)
+          fn-name (gen-il-name name "<fn>")
           fn-type (if variadic? 
                     (gt/variadic-fn-type *module* fn-name interfaces)
                     (gt/fn-type *module* fn-name interfaces))]
@@ -176,15 +188,11 @@
              ;; would create one themselves or reuse one if another pass had created one
              ;; already, but the SRE quirk makes that difficult. instead we create one here
              ;; and expose it in the AST. this means that the core compiler is doing
-             ;; work for the optimizatio passes, which is less than ideal, but what
+             ;; work for the optimization passes, which is less than ideal, but what
              ;; are you going to do.
              :fn-type-cctor (when (or (pos? (count vars))
                                       (pos? (count keywords)))
-                             (.DefineConstructor
-                              fn-type
-                              (enum-or MethodAttributes/Public MethodAttributes/Static)
-                              CallingConventions/Standard
-                              Type/EmptyTypes))))
+                              (make-fn-type-cctor fn-type))))
     ast))
 
 (defn analyze-proxy
@@ -192,7 +200,7 @@
    looks up interface/super type methods. magic.emission/*module* must be bound
    before this function is called and will contain the generated proxy type when
    this function returns."
-  [{:keys [op class-and-interface fns] :as ast}]
+  [{:keys [op class-and-interface fns containing-fn-name] :as ast}]
   (case op
     :proxy
     (let [class-and-interface (mapv host/analyze-type class-and-interface)
@@ -205,7 +213,8 @@
                              (drop 1 class-and-interface)
                              class-and-interface))
           interfaces* (into #{} (concat interfaces (mapcat #(.GetInterfaces %) interfaces)))
-          proxy-type (gt/proxy-type *module* super interfaces)
+          proxy-name (gen-il-name (str containing-fn-name "<proxy>"))
+          proxy-type (gt/proxy-type *module* proxy-name super interfaces)
           candidate-methods (into #{} (concat (.GetMethods super)
                                               (mapcat #(.GetMethods %) interfaces*)))
           fns (mapv #(analyze-method % candidate-methods :proxy-type proxy-type false) fns)
@@ -222,7 +231,7 @@
     ast))
 
 (defn analyze-reify
-  [{:keys [op interfaces methods] :as ast}]
+  [{:keys [op interfaces methods containing-fn-name] :as ast}]
   (case op
     :reify
     (let [interfaces*
@@ -231,7 +240,8 @@
                 (map host/analyze-type)
                 (mapv :val))
            clojure.lang.IObj)
-          reify-type (gt/reify-type *module* interfaces*)
+          reify-name (gen-il-name (str containing-fn-name "<reify>"))
+          reify-type (gt/reify-type *module* reify-name interfaces*)
           all-interfaces (into #{} (concat interfaces* (mapcat #(.GetInterfaces %) interfaces*)))
           candidate-methods (into #{} (concat (.GetMethods Object)
                                               (mapcat #(.GetMethods %) all-interfaces)))
@@ -248,6 +258,13 @@
     (update ast :form vary-meta assoc :tag clojure.lang.ISeq)
     ast))
 
+(defn ensure-latest-types [{:keys [op type val] :as ast}]
+  (if (and (= :const op)
+           (= :class type))
+    (let [resolved (types/resolve (.FullName val))]
+      (assoc ast :val resolved))
+    ast))
+
 (defn typed-pass* [ast]
   (-> ast
       analyze-proxy
@@ -257,6 +274,7 @@
       analyze-gen-interface
       hint-variadic-parameter
       host/analyze-byref
+      ensure-latest-types
       host/analyze-type
       host/analyze-host-field
       host/analyze-constructor

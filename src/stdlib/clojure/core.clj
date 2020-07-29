@@ -281,10 +281,10 @@
                arglist)))
          resolve-tag (fn [argvec]
                         (let [m (meta argvec)
-                              ^clojure.lang.Symbol tag (:tag m)
+                              tag (:tag m)
                               tag-name (str tag)]
                           (if (instance? clojure.lang.Symbol tag)
-                            (if (clojure.lang.Util/equiv (.IndexOf (.Name tag) ".") -1)                                              ;;; .indexOf  .getName
+                            (if (clojure.lang.Util/equiv (.IndexOf (.Name ^clojure.lang.Symbol tag) ".") -1)                                              ;;; .indexOf  .getName
                               (if (clojure.lang.Util/equals nil (maybe-special-tag tag))         ;;; clojure.lang.Compiler$HostExpr
                                 (let [c (clojure.lang.RT/classForName tag-name)]                                 ;;; clojure.lang.Compiler$HostExpr  maybeClass
                                   (if c
@@ -373,7 +373,7 @@
 		        ;;todo - restore propagation of fn name
 				;;must figure out how to convey primitive hints to self calls first
 								;;(cons `fn fdecl)
-								(with-meta (cons `fn fdecl) {:rettag (:tag m)})))))
+								(with-meta (list* `fn name fdecl) {:rettag (:tag m)})))))
 
 (. (var defn) (setMacro))       
 
@@ -1625,8 +1625,8 @@
   {:tag String
    :added "1.0
    :static true"}
-  [^clojure.lang.Named x]
-    (if (string? x) x (. x (getName))))
+  [x]
+    (if (string? x) x (. ^clojure.lang.Named x (getName))))
 
 (defn namespace
   "Returns the namespace String of a symbol or keyword, or nil if not present."
@@ -4201,7 +4201,7 @@ Note that read can execute code (controlled by *read-eval*),
    :static true}
   [ns]
   (let [ns (the-ns ns)]
-    (filter-key val (fn [ v] (and (instance? clojure.lang.Var v)    ;;;  removed the tag on v:  ^clojure.lang.Var
+    (filter-key val (fn [v] (and (instance? clojure.lang.Var v)    ;;;  removed the tag on v:  ^clojure.lang.Var
                                  (= ns (.ns v))
                                  (.isPublic v)))
                 (ns-map ns))))
@@ -4219,7 +4219,7 @@ Note that read can execute code (controlled by *read-eval*),
    :static true}
   [ns]
   (let [ns (the-ns ns)]
-    (filter-key val (fn [^clojure.lang.Var v] (and (instance? clojure.lang.Var v)
+    (filter-key val (fn [v] (and (instance? clojure.lang.Var v)
                                  (= ns (.ns v))))
                 (ns-map ns))))
 
@@ -4266,7 +4266,7 @@ Note that read can execute code (controlled by *read-eval*),
    :static true}
   [ns]
   (let [ns (the-ns ns)]
-    (filter-key val (fn [^clojure.lang.Var v] (and (instance? clojure.lang.Var v)
+    (filter-key val (fn [v] (and (instance? clojure.lang.Var v)
                                  (not= ns (.ns v))))
                 (ns-map ns))))
 
@@ -5786,9 +5786,11 @@ Note that read can execute code (controlled by *read-eval*),
                name)
         gen-class-clause (first (filter #(= :gen-class (first %)) references))
         gen-class-call
-          (when gen-class-clause
-            (list* `gen-class :name (.Replace (str name) \- \_) :impl-ns name :main true (next gen-class-clause)))   ;;; .replace
-        references (remove #(= :gen-class (first %)) references)
+        (when gen-class-clause
+          (list* `gen-class :name (.Replace (str name) \- \_) :impl-ns name :main true (next gen-class-clause)))   ;;; .replace
+        refer-clojure-reference (some #(when (= :refer-clojure (first %)) %) references)
+        references (remove #(or (= :gen-class (first %))
+                                (= :refer-clojure (first %))) references)
         ;ns-effect (clojure.core/in-ns name)
         name-metadata (meta name)]
     `(do
@@ -5797,8 +5799,10 @@ Note that read can execute code (controlled by *read-eval*),
            `((.resetMeta (clojure.lang.Namespace/find '~name) ~name-metadata)))  
        (with-loading-context
         ~@(when gen-class-call (list gen-class-call))
-        ~@(when (and (not= name 'clojure.core) (not-any? #(= :refer-clojure (first %)) references))
+        ~@(when (and (not= name 'clojure.core) (not refer-clojure-reference))
             `((clojure.core/refer '~'clojure.core)))
+         ~(when refer-clojure-reference
+             (process-reference refer-clojure-reference))
          ~@(map process-reference references))
         (if (.Equals '~name 'clojure.core)                                          ;;; .equals
           nil

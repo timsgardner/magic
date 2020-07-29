@@ -15,11 +15,16 @@
   (:import [clojure.test ReflectorTryCatchFixture 
                          ReflectorTryCatchFixture+Cookies]))                        ;;; ReflectorTryCatchFixture$Cookies
 
+(defn maybe-unwrap-exception [e]
+  (if (instance? System.Reflection.TargetInvocationException e)
+    (.InnerException ^System.Reflection.TargetInvocationException e)
+    e))
+
 (defn- get-exception [expression]
   (try (eval expression)
     nil
     (catch System.Exception t                                                         ;;; java.lang.Throwable
-      t)))
+      (maybe-unwrap-exception t))))
 
 (deftest catch-receives-checked-exception
   (are [expression expected-exception] (= expected-exception
@@ -32,8 +37,6 @@
   (is 90 (try 90 (catch Exception e 89)))
   (is 89 (try (throw (Exception. "oops")) 90 (catch Exception e 89)))
   (is 1 (try 1 (catch Exception e (clojure.lang.RT/load "hello"))))
-  (is (thrown? Exception (try 1 (catch Exception e (throw e)))))
-  (is (thrown? Exception (type (try 1 (catch Exception e (throw e))))))
   (is 2 (+ 1 (try 1 (catch Exception e 2))))
   (is 4 (+ 1 (do 2 (try 1 (catch Exception e 2)) 3)))
   (is 4 (+ 1 (do 2 (try (throw (Exception. "oops")) (catch Exception e 2)) 3))))

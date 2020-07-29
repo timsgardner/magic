@@ -1,5 +1,5 @@
 (ns magic.analyzer.generated-types
-  (:require [magic.util :as u])
+  (:require [magic.analyzer.types :as types])
   (:import [System.Reflection TypeAttributes]))
 
 (def ^:dynamic
@@ -21,8 +21,13 @@
     type))
 
 (defn define-new-type [module-builder name super interfaces attributes]
-  (.DefineType
-   module-builder name attributes super (into-array Type interfaces)))
+  (types/type-lookup-cache-evict! name)
+  (if module-builder
+    (.DefineType
+     module-builder name attributes super (into-array Type interfaces))
+    (throw (Exception. (str "no module builder provided when defining new type " 
+                            name
+                            ", was magic.emission/*module* bound?")))))
 
 (defn fresh-type [module-builder name super interfaces attributes]
   (if *reusable-types*
@@ -49,9 +54,8 @@
 (defn variadic-fn-type [module-builder name interfaces]
   (fresh-type module-builder name clojure.lang.RestFn interfaces public))
 
-(defn proxy-type [module-builder super interfaces]
-  (fresh-type module-builder (str (u/gensym "proxy")) super interfaces public))
+(defn proxy-type [module-builder name super interfaces]
+  (fresh-type module-builder name super interfaces public))
 
-(defn reify-type [module-builder interfaces]
-  (fresh-type
-   module-builder (str (u/gensym "reify")) Object interfaces public-sealed))
+(defn reify-type [module-builder name interfaces]
+  (fresh-type module-builder name Object interfaces public-sealed))
