@@ -112,7 +112,8 @@
    :features #{:cljr}})
 
 (defn compile-expression [expr roots ctx opts]
-  (println "[compile-expression]" (-> expr (trim 30)) (str *ns*) (ns-aliases *ns*))
+  (when-not (:suppress-print-forms opts)
+    (println "[compile-expression]" (-> expr (trim 30)) (str *ns*) (ns-aliases *ns*)))
   (let [expr-name (u/gensym "<magic>expr")
         expr-type (.DefineType magic.emission/*module* expr-name abstract-sealed)
         expr-method (.DefineMethod expr-type "eval" public-static)
@@ -150,8 +151,6 @@
   ([expr roots ctx]
    (compile-expression-top-level expr roots ctx nil))
   ([expr roots ctx opts]
-   (when-not (:suppress-print-forms opts)
-     (println "[compile-expression-top-level]" (-> expr (trim 30))))
    (cond
      (and (seq? expr)
           (= 'do (first expr)))
